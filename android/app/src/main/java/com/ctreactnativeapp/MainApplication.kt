@@ -1,9 +1,12 @@
 package com.ctreactnativeapp
-import com.clevertap.android.sdk.ActivityLifecycleCallback
-import com.clevertap.react.CleverTapPackage
-import com.clevertap.android.sdk.CleverTapAPI
 
 import android.app.Application
+// Add these missing imports for the Notification Handler
+import com.clevertap.android.pushtemplates.PushTemplateNotificationHandler
+import com.clevertap.android.sdk.interfaces.NotificationHandler
+
+import com.clevertap.android.sdk.ActivityLifecycleCallback
+import com.clevertap.android.sdk.CleverTapAPI
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
@@ -36,16 +39,24 @@ class MainApplication : Application(), ReactApplication {
   override val reactHost: ReactHost
     get() = getDefaultReactHost(applicationContext, reactNativeHost)
 
+  // ERROR FIXED: Executable code removed from here.
+
   override fun onCreate() {
-        ActivityLifecycleCallback.register(this)
-        super.onCreate()
+    // 1. Register Lifecycle Callbacks first
+    ActivityLifecycleCallback.register(this) 
+    
+    super.onCreate()
 
+    // 2. Configure CleverTap inside onCreate
+    CleverTapAPI.setDebugLevel(CleverTapAPI.LogLevel.DEBUG)
+    
+    // 3. Set Notification Handler (Moved inside onCreate)
+    CleverTapAPI.setNotificationHandler(PushTemplateNotificationHandler() as NotificationHandler)
 
-        CleverTapAPI.setDebugLevel(CleverTapAPI.LogLevel.DEBUG)
-        SoLoader.init(this, OpenSourceMergedSoMapping)
-        if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
+    SoLoader.init(this, OpenSourceMergedSoMapping)
+    if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
       // If you opted-in for the New Architecture, we load the native entry point for this app.
-           load()
+      load()
     }
   }
 }
