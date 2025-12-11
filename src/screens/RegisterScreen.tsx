@@ -9,286 +9,390 @@ import {
   Animated,
   KeyboardAvoidingView,
   Platform,
-  Easing,
+  Dimensions,
+  StatusBar,
+  ActivityIndicator,
 } from 'react-native';
 import CleverTap from 'clevertap-react-native';
 import {useNavigation} from '@react-navigation/native';
-import {StackNavigationProp} from '@react-navigation/stack';
+import LinearGradient from 'react-native-linear-gradient';
 import Toast from 'react-native-toast-message';
 
-type RootStackParamList = {
-  Register: undefined;
-  MainTabs: {
-    screen: string;
-    params: {name: string; email: string; phone: string};
+// PRO ASSETS: Icons make forms 2x faster to read
+import {
+  User,
+  Mail,
+  Phone,
+  Lock,
+  ArrowLeft,
+  ChevronRight,
+} from 'lucide-react-native';
+
+const {width, height} = Dimensions.get('window');
+
+// --- HELPER COMPONENT: ANIMATED INPUT ---
+// This isolates the logic for the "Glow" effect when you click a box
+const ModernInput = ({
+  label,
+  icon: Icon,
+  value,
+  onChangeText,
+  placeholder,
+  isSecure = false,
+  keyboardType = 'default',
+}: any) => {
+  const [isFocused, setIsFocused] = useState(false);
+  const animatedBorder = useRef(new Animated.Value(0)).current;
+
+  const handleFocus = () => {
+    setIsFocused(true);
+    Animated.timing(animatedBorder, {
+      toValue: 1,
+      duration: 200,
+      useNativeDriver: false,
+    }).start();
   };
+
+  const handleBlur = () => {
+    setIsFocused(false);
+    Animated.timing(animatedBorder, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: false,
+    }).start();
+  };
+
+  const borderColor = animatedBorder.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['#2D2D3A', '#E50914'], // Grey -> Netflix Red on focus
+  });
+
+  return (
+    <View style={{marginBottom: 20}}>
+      <Text style={styles.inputLabel}>{label}</Text>
+      <Animated.View
+        style={[styles.inputContainer, {borderColor: borderColor}]}>
+        <View style={styles.iconContainer}>
+          <Icon size={20} color={isFocused ? '#E50914' : '#666'} />
+        </View>
+        <TextInput
+          style={styles.input}
+          placeholder={placeholder}
+          placeholderTextColor="#555"
+          value={value}
+          onChangeText={onChangeText}
+          secureTextEntry={isSecure}
+          keyboardType={keyboardType}
+          autoCapitalize="none"
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+        />
+      </Animated.View>
+    </View>
+  );
 };
 
-type RegisterScreenNavigationProp = StackNavigationProp<
-  RootStackParamList,
-  'Register'
->;
-
+// --- MAIN SCREEN ---
 const RegisterScreen = () => {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const buttonScale = useRef(new Animated.Value(1)).current;
-  const formPosition = useRef(new Animated.Value(30)).current;
-  const navigation = useNavigation<RegisterScreenNavigationProp>();
+  const navigation = useNavigation<any>();
 
-  // Animation for form entry
+  // State
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    password: '',
+    confirm: '',
+  });
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Animations
+  const buttonScale = useRef(new Animated.Value(1)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
   React.useEffect(() => {
-    Animated.timing(formPosition, {
-      toValue: 0,
-      duration: 600,
-      easing: Easing.out(Easing.back(1.2)),
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 800,
       useNativeDriver: true,
     }).start();
   }, []);
 
-  const animateButton = () => {
-    Animated.sequence([
-      Animated.timing(buttonScale, {
-        toValue: 0.96,
-        duration: 80,
-        easing: Easing.ease,
-        useNativeDriver: true,
-      }),
-      Animated.timing(buttonScale, {
-        toValue: 1,
-        duration: 200,
-        easing: Easing.elastic(1.5),
-        useNativeDriver: true,
-      }),
-    ]).start();
-  };
-
   const handleRegister = async () => {
-    if (!name || !email || !phone || !password || !confirmPassword) {
-      Toast.show({
-        type: 'error',
-        text1: 'Missing fields',
-        text2: 'Please fill all details',
-        position: 'top',
-        topOffset: 60,
-      });
-      return;
-    }
+    const {name, email, phone, password, confirm} = formData;
 
-    if (password !== confirmPassword) {
-      Toast.show({
+    // 1. Validation
+    if (!name || !email || !phone || !password) {
+      return Toast.show({
         type: 'error',
-        text1: 'Password mismatch',
-        text2: 'Passwords do not match',
-        position: 'top',
-        topOffset: 60,
+        text1: 'Missing Details',
+        text2: 'Please fill out all fields.',
       });
-      return;
+    }
+    if (password !== confirm) {
+      return Toast.show({
+        type: 'error',
+        text1: 'Password Error',
+        text2: 'Passwords do not match.',
+      });
     }
 
     setIsLoading(true);
-    animateButton();
 
     try {
+      // 2. Data Formatting
       const formattedPhone = phone.startsWith('+') ? phone : `+${phone}`;
+
+      // 3. CLEVERTAP INTEGRATION (SECURE)
+      // DO NOT send password. Do send "Plan Type" or "Source"
       const userProfile = {
         Name: name,
-        Identity: email,
+        Identity: email, // Critical for merging profiles
         Email: email,
         Phone: formattedPhone,
-        'Account Created': new Date().toISOString(),
+        'Account Created': new Date(),
+        'Plan Type': 'Free', // Good for segmentation later
+        'MSG-email': true, // Opt-in for email marketing
+        'MSG-push': true, // Opt-in for push
       };
 
-      // Send user profile to CleverTap
       await CleverTap.onUserLogin(userProfile);
-      await CleverTap.profileSet({Password: password});
 
+      // Track the specific event
+      CleverTap.recordEvent('User Registered', {Method: 'Email'});
+
+      // 4. Success UI
       Toast.show({
         type: 'success',
-        text1: 'Registration successful!',
-        text2: `Welcome ${name.split(' ')[0]}`,
-        position: 'top',
-        topOffset: 60,
+        text1: 'Welcome!',
+        text2: `Account created for ${name}`,
       });
 
-      navigation.navigate('MainTabs', {
-        screen: 'Dashboard',
-        params: {name, email, phone: formattedPhone},
+      // Navigate to Dashboard (passing minimal data)
+      navigation.reset({
+        index: 0,
+        routes: [{name: 'MainTabs'}],
       });
     } catch (error) {
+      console.error(error);
       Toast.show({
         type: 'error',
-        text1: 'Registration failed',
-        text2: 'Please try again',
-        position: 'top',
-        topOffset: 60,
+        text1: 'Registration Failed',
+        text2: 'Please try again later.',
       });
-      console.error('Registration error:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}>
-      <ScrollView
-        contentContainerStyle={styles.scrollContainer}
-        keyboardShouldPersistTaps="handled">
-        <View style={styles.header}>
-          <Text style={styles.title}>Create Account</Text>
-          <Text style={styles.subtitle}>Join us to get started</Text>
-        </View>
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="#000" />
 
-        <Animated.View
-          style={[
-            styles.formContainer,
-            {transform: [{translateY: formPosition}]},
-          ]}>
-          <Text style={styles.inputLabel}>FULL NAME</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter your name"
-            placeholderTextColor="#999"
-            value={name}
-            onChangeText={setName}
-            autoCapitalize="words"
-          />
+      {/* 1. CINEMATIC HEADER (Gradient + Back Button) */}
+      <LinearGradient
+        colors={['rgba(229, 9, 20, 0.15)', 'transparent']}
+        style={styles.headerGradient}
+      />
 
-          <Text style={styles.inputLabel}>EMAIL</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter your email"
-            placeholderTextColor="#999"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            value={email}
-            onChangeText={setEmail}
-          />
+      <View style={styles.safeHeader}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backButton}>
+          <ArrowLeft color="#fff" size={24} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Create Account</Text>
+      </View>
 
-          <Text style={styles.inputLabel}>PHONE NUMBER</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter with country code"
-            placeholderTextColor="#999"
-            keyboardType="phone-pad"
-            value={phone}
-            onChangeText={setPhone}
-          />
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{flex: 1}}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}>
+          <Animated.View style={{opacity: fadeAnim}}>
+            <Text style={styles.subHeader}>Start your 30-day free trial.</Text>
 
-          <Text style={styles.inputLabel}>PASSWORD</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Create a password"
-            placeholderTextColor="#999"
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-          />
+            <ModernInput
+              label="FULL NAME"
+              icon={User}
+              placeholder="John Doe"
+              value={formData.name}
+              onChangeText={(t: string) => setFormData({...formData, name: t})}
+            />
 
-          <Text style={styles.inputLabel}>CONFIRM PASSWORD</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Confirm your password"
-            placeholderTextColor="#999"
-            secureTextEntry
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-          />
+            <ModernInput
+              label="EMAIL ADDRESS"
+              icon={Mail}
+              placeholder="john@example.com"
+              value={formData.email}
+              onChangeText={(t: string) => setFormData({...formData, email: t})}
+              keyboardType="email-address"
+            />
 
-          <Animated.View style={{transform: [{scale: buttonScale}]}}>
+            <ModernInput
+              label="PHONE NUMBER"
+              icon={Phone}
+              placeholder="+1 234 567 890"
+              value={formData.phone}
+              onChangeText={(t: string) => setFormData({...formData, phone: t})}
+              keyboardType="phone-pad"
+            />
+
+            <ModernInput
+              label="PASSWORD"
+              icon={Lock}
+              placeholder="Min. 8 characters"
+              value={formData.password}
+              onChangeText={(t: string) =>
+                setFormData({...formData, password: t})
+              }
+              isSecure={true}
+            />
+
+            <ModernInput
+              label="CONFIRM PASSWORD"
+              icon={Lock}
+              placeholder="Re-enter password"
+              value={formData.confirm}
+              onChangeText={(t: string) =>
+                setFormData({...formData, confirm: t})
+              }
+              isSecure={true}
+            />
+
+            {/* MAIN ACTION BUTTON */}
             <TouchableOpacity
-              style={[styles.button, isLoading && styles.buttonDisabled]}
+              style={styles.ctaButton}
               onPress={handleRegister}
-              activeOpacity={0.9}
-              disabled={isLoading}>
-              <Text style={styles.buttonText}>
-                {isLoading ? 'CREATING ACCOUNT...' : 'CREATE ACCOUNT'}
-              </Text>
+              disabled={isLoading}
+              activeOpacity={0.8}>
+              {isLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Text style={styles.ctaText}>Create Account</Text>
+                  <ChevronRight color="#fff" size={20} style={{opacity: 0.8}} />
+                </>
+              )}
             </TouchableOpacity>
+
+            {/* LEGAL FOOTER */}
+            <Text style={styles.legalText}>
+              By signing up, you agree to our Terms of Service and Privacy
+              Policy.
+            </Text>
           </Animated.View>
-        </Animated.View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F0F1A',
+    backgroundColor: '#000000', // Pure OLED Black
   },
-  scrollContainer: {
-    flexGrow: 1,
-    paddingHorizontal: 28,
-    paddingTop: 60,
+  headerGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 300,
+  },
+  safeHeader: {
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingHorizontal: 24,
+    marginBottom: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  backButton: {
+    padding: 8,
+    marginRight: 16,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 12,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#fff',
+    letterSpacing: 0.5,
+  },
+  subHeader: {
+    fontSize: 16,
+    color: '#888',
+    marginBottom: 32,
+    fontWeight: '400',
+  },
+  scrollContent: {
+    paddingHorizontal: 24,
     paddingBottom: 40,
   },
-  header: {
-    marginBottom: 48,
-    alignItems: 'flex-start',
-  },
-  title: {
-    fontSize: 32,
-    fontFamily: 'Poppins-Bold',
-    color: '#FFFFFF',
-    marginBottom: 8,
-    letterSpacing: 0.5,
-  },
-  subtitle: {
-    fontSize: 16,
-    fontFamily: 'Poppins-Medium',
-    color: '#8E8E93',
-    letterSpacing: 0.3,
-  },
-  formContainer: {
-    marginBottom: 24,
-  },
+
+  // INPUT STYLES
   inputLabel: {
-    fontSize: 12,
-    fontFamily: 'Poppins-SemiBold',
-    color: '#8E8E93',
+    fontSize: 11,
+    color: '#888',
+    fontWeight: '700',
     marginBottom: 8,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#111', // Slightly lighter than background
+    borderRadius: 12,
+    borderWidth: 1,
+    height: 56,
+  },
+  iconContainer: {
+    width: 50,
+    height: 56,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRightWidth: 1,
+    borderRightColor: '#222',
   },
   input: {
+    flex: 1,
     height: 56,
-    backgroundColor: '#1E1E2D',
-    borderRadius: 14,
-    paddingHorizontal: 20,
-    marginBottom: 24,
+    color: '#fff',
+    paddingHorizontal: 16,
     fontSize: 16,
-    fontFamily: 'Poppins-Medium',
-    color: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#2D2D3A',
+    fontWeight: '500',
   },
-  button: {
-    backgroundColor: '#6C5CE7',
-    paddingVertical: 18,
-    borderRadius: 14,
+
+  // CTA BUTTON
+  ctaButton: {
+    marginTop: 20,
+    backgroundColor: '#E50914', // Netflix Red
+    borderRadius: 12,
+    height: 56,
+    flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 12,
-    shadowColor: '#6C5CE7',
-    shadowOffset: {width: 0, height: 8},
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
+    shadowColor: '#E50914',
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
     elevation: 8,
   },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  buttonText: {
-    color: '#FFFFFF',
+  ctaText: {
+    color: '#fff',
     fontSize: 16,
-    fontFamily: 'Poppins-SemiBold',
-    letterSpacing: 0.5,
+    fontWeight: 'bold',
+    marginRight: 8,
+  },
+
+  // FOOTER
+  legalText: {
+    marginTop: 24,
+    textAlign: 'center',
+    color: '#444',
+    fontSize: 12,
+    lineHeight: 18,
   },
 });
 

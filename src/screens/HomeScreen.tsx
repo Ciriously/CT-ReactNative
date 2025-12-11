@@ -4,215 +4,287 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  ImageBackground,
   Animated,
-  Easing,
   Dimensions,
+  StatusBar,
+  Image, // <--- Using standard Image
+  Easing,
+  Platform,
+  InteractionManager,
 } from 'react-native';
-import {useNavigation} from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import type {RootStackParamList} from '../navigation/AppNavigator';
+import {useNavigation, useIsFocused} from '@react-navigation/native';
+import LinearGradient from 'react-native-linear-gradient';
 import CleverTap from 'clevertap-react-native';
+
+// Assets
+import {ArrowRight, User} from 'lucide-react-native';
 
 const {width, height} = Dimensions.get('window');
 
-type HomeScreenNavigationProp = NativeStackNavigationProp<
-  RootStackParamList,
-  'Home'
->;
-
 const MOVIE_POSTERS = [
-  'https://i.pinimg.com/736x/89/a1/13/89a113130158124f4e0270d7c038a89c.jpg',
-  'https://i.pinimg.com/736x/d0/19/31/d01931b768a48405cefb0d43b55c030d.jpg',
-  'https://i.pinimg.com/736x/c1/b3/09/c1b309a68e8d129d084d2e4e97e5d933.jpg',
-  'https://i.pinimg.com/736x/89/c4/3d/89c43dc6134a289040d68684ccff81ac.jpg',
-  'https://i.pinimg.com/736x/52/03/51/52035175c835c41b2e3a6cc65b675259.jpg',
+  'https://image.tmdb.org/t/p/original/q6y0Go1tsGEsmtFryDOJo3dEmqu.jpg',
+  'https://image.tmdb.org/t/p/original/u3bZgnGQ9T01sWNhyve4z0wHmnH.jpg',
+  'https://image.tmdb.org/t/p/original/8RpDcs6KTProjectwrlTIVUpDDb.jpg',
+  'https://image.tmdb.org/t/p/original/gKkl37BQuKTanygYQG1pyYgLVgf.jpg',
 ];
 
 export const HomeScreen = () => {
-  const navigation = useNavigation<HomeScreenNavigationProp>();
-  const buttonScale = useRef(new Animated.Value(1)).current;
-  const contentSlide = useRef(new Animated.Value(50)).current;
-  const fadeAnim = useRef(new Animated.Value(1)).current;
-  const [bgIndex, setBgIndex] = useState(0);
+  const navigation = useNavigation<any>();
+  const isFocused = useIsFocused();
 
+  // Animation Values
+  const contentSlide = useRef(new Animated.Value(60)).current;
+  const contentOpacity = useRef(new Animated.Value(0)).current;
+  const crossFadeAnim = useRef(new Animated.Value(0)).current;
+  const buttonScale = useRef(new Animated.Value(1)).current;
+
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [nextImageIndex, setNextImageIndex] = useState(1);
+
+  // 1. Entrance Animation
   useEffect(() => {
-    Animated.timing(contentSlide, {
-      toValue: 0,
-      duration: 800,
-      easing: Easing.out(Easing.exp),
-      useNativeDriver: true,
-    }).start();
+    Animated.parallel([
+      Animated.timing(contentSlide, {
+        toValue: 0,
+        duration: 1000,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.poly(4)),
+      }),
+      Animated.timing(contentOpacity, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+    ]).start();
   }, []);
 
+  // 2. Slideshow Logic
   useEffect(() => {
+    if (!isFocused) return;
+
     const interval = setInterval(() => {
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 600,
-        useNativeDriver: true,
+      const nextIndex = (activeImageIndex + 1) % MOVIE_POSTERS.length;
+      setNextImageIndex(nextIndex);
+
+      Animated.timing(crossFadeAnim, {
+        toValue: 1,
+        duration: 2500,
+        useNativeDriver: true, // Native driver is safe on View, sometimes buggy on Image props
       }).start(() => {
-        setBgIndex(prev => (prev + 1) % MOVIE_POSTERS.length);
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 600,
-          useNativeDriver: true,
-        }).start();
+        if (isFocused) {
+          setActiveImageIndex(nextIndex);
+          crossFadeAnim.setValue(0);
+        }
       });
-    }, 5000);
+    }, 6000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [activeImageIndex, isFocused]);
 
-  const animateButton = () => {
+  // 3. Navigation Action
+  const handleAction = (screenName: string) => {
     Animated.sequence([
       Animated.timing(buttonScale, {
-        toValue: 0.95,
+        toValue: 0.96,
         duration: 100,
         useNativeDriver: true,
       }),
       Animated.timing(buttonScale, {
         toValue: 1,
-        duration: 200,
-        easing: Easing.elastic(1.5),
+        duration: 100,
         useNativeDriver: true,
       }),
     ]).start();
-  };
 
-  const trackButtonClick = (buttonName: string) => {
-    CleverTap.recordEvent('HomeScreen Interaction', {
-      Action: buttonName,
-      Screen: 'Home',
-      Timestamp: new Date().toISOString(),
+    CleverTap.recordEvent('Onboarding Action', {Type: screenName});
+
+    InteractionManager.runAfterInteractions(() => {
+      if (screenName === 'Login') navigation.navigate('Login');
+      if (screenName === 'Register') navigation.navigate('Register');
     });
-  };
-
-  const handleLoginPress = () => {
-    animateButton();
-    trackButtonClick('Login');
-    navigation.navigate('Login');
-  };
-
-  const handleRegisterPress = () => {
-    animateButton();
-    trackButtonClick('Register');
-    navigation.navigate('Register');
   };
 
   return (
     <View style={styles.container}>
-      {/* Background Slideshow */}
-      <Animated.View style={[styles.animatedBg, {opacity: fadeAnim}]}>
-        <ImageBackground
-          source={{uri: MOVIE_POSTERS[bgIndex]}}
+      <StatusBar
+        translucent
+        backgroundColor="transparent"
+        barStyle="light-content"
+      />
+
+      {/* --- FIX: Use Animated.View wrapping Image to stop React 18 Warning --- */}
+
+      {/* Layer 1: Active Image */}
+      <View style={StyleSheet.absoluteFill}>
+        <Image
+          source={{uri: MOVIE_POSTERS[activeImageIndex]}}
+          style={styles.background}
+          resizeMode="cover"
+        />
+      </View>
+
+      {/* Layer 2: Next Image (Fades In) */}
+      <Animated.View
+        style={[StyleSheet.absoluteFill, {opacity: crossFadeAnim}]}>
+        <Image
+          source={{uri: MOVIE_POSTERS[nextImageIndex]}}
           style={styles.background}
           resizeMode="cover"
         />
       </Animated.View>
 
-      {/* Overlay with UI */}
-      <View style={styles.overlay}>
-        <View style={styles.topSpace} />
+      {/* GRADIENTS */}
+      <LinearGradient
+        colors={['rgba(0,0,0,0.5)', 'transparent']}
+        style={styles.topGradient}
+      />
+      <LinearGradient
+        colors={['transparent', 'rgba(0,0,0,0.1)', '#000000']}
+        locations={[0, 0.4, 1]}
+        style={styles.bottomGradient}
+      />
 
+      {/* CONTENT */}
+      <Animated.View
+        style={[
+          styles.contentContainer,
+          {opacity: contentOpacity, transform: [{translateY: contentSlide}]},
+        ]}>
+        {/* TAG */}
+        <View style={styles.glassTag}>
+          <View style={styles.redDot} />
+          <Text style={styles.tagText}>#1 IN MOVIES TODAY</Text>
+        </View>
+
+        {/* TEXT */}
+        <Text style={styles.title}>
+          Unlimited movies,{'\n'}TV shows, and more.
+        </Text>
+        <Text style={styles.subtitle}>Watch anywhere. Cancel anytime.</Text>
+
+        {/* PRIMARY BUTTON */}
         <Animated.View
-          style={[
-            styles.bottomContent,
-            {
-              transform: [{translateY: contentSlide}],
-            },
-          ]}>
-          <Text style={styles.title}>MovieFlix</Text>
-          <Text style={styles.subtitle}>
-            Your favorite movies, all in one place.
-          </Text>
-
-          <Animated.View style={{transform: [{scale: buttonScale}]}}>
-            <TouchableOpacity
-              style={styles.button}
-              onPress={handleLoginPress}
-              activeOpacity={0.8}>
-              <Text style={styles.buttonText}>Login</Text>
-            </TouchableOpacity>
-          </Animated.View>
-
-          <Animated.View style={{transform: [{scale: buttonScale}]}}>
-            <TouchableOpacity
-              style={[styles.button, styles.secondary]}
-              onPress={handleRegisterPress}
-              activeOpacity={0.8}>
-              <Text style={[styles.buttonText, styles.secondaryText]}>
-                Register
-              </Text>
-            </TouchableOpacity>
-          </Animated.View>
+          style={{transform: [{scale: buttonScale}], width: '100%'}}>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={() => handleAction('Register')}
+            activeOpacity={1}>
+            <Text style={styles.primaryButtonText}>Get Started</Text>
+            <ArrowRight
+              color="#fff"
+              size={20}
+              strokeWidth={2.5}
+              style={{marginLeft: 8}}
+            />
+          </TouchableOpacity>
         </Animated.View>
-      </View>
+
+        {/* SECONDARY BUTTON */}
+        <TouchableOpacity
+          style={styles.secondaryButton}
+          onPress={() => handleAction('Login')}
+          activeOpacity={0.7}>
+          <User color="#ccc" size={18} />
+          <Text style={styles.secondaryButtonText}>Sign In</Text>
+        </TouchableOpacity>
+      </Animated.View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  container: {flex: 1, backgroundColor: '#000'},
+  background: {width: width, height: height}, // Removed absoluteFill here as parent handles it
+  topGradient: {position: 'absolute', top: 0, height: 150, width: '100%'},
+  bottomGradient: {
+    position: 'absolute',
+    bottom: 0,
+    height: height * 0.7,
+    width: '100%',
   },
-  animatedBg: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  background: {
+
+  contentContainer: {
     flex: 1,
-    width,
-    height,
-  },
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
+    paddingHorizontal: 24,
+    paddingBottom: Platform.OS === 'ios' ? 50 : 30,
+    alignItems: 'center',
   },
-  topSpace: {
-    flex: 1,
+
+  glassTag: {
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 100,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
   },
-  bottomContent: {
-    padding: 32,
-    backgroundColor: '#000',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+  redDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#E50914',
+    marginRight: 8,
   },
-  title: {
-    fontSize: 34,
-    fontFamily: 'Poppins-Bold',
+  tagText: {
     color: '#fff',
-    marginBottom: 12,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+
+  title: {
+    fontSize: 36,
+    fontWeight: '800',
+    color: '#fff',
     textAlign: 'center',
-    letterSpacing: 0.5,
+    marginBottom: 12,
+    letterSpacing: -0.5,
+    lineHeight: 42,
   },
   subtitle: {
-    fontSize: 18,
-    fontFamily: 'Poppins-Medium',
-    color: '#ddd',
+    fontSize: 16,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.7)',
+    textAlign: 'center',
     marginBottom: 40,
-    textAlign: 'center',
-    letterSpacing: 0.3,
   },
-  button: {
-    backgroundColor: '#fff',
-    paddingVertical: 14,
-    borderRadius: 30,
-    marginBottom: 16,
+
+  primaryButton: {
+    backgroundColor: '#E50914',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 18,
+    borderRadius: 12,
+    width: '100%',
+    shadowColor: '#E50914',
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 12,
   },
-  buttonText: {
-    color: '#222',
-    fontSize: 18,
-    fontFamily: 'Poppins-SemiBold',
-    textAlign: 'center',
-  },
-  secondary: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: '#fff',
-  },
-  secondaryText: {
+  primaryButtonText: {
     color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+    marginLeft: 4,
+  },
+  secondaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 20,
+    padding: 10,
+  },
+  secondaryButtonText: {
+    color: '#ccc',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
   },
 });
 
