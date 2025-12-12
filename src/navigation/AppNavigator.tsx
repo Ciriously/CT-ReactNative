@@ -1,34 +1,30 @@
 import React from 'react';
-import {NavigationContainer} from '@react-navigation/native';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
-import {HomeScreen} from '../screens/HomeScreen';
-import LoginScreen from '../screens/LoginScreen';
-import RegisterScreen from '../screens/RegisterScreen';
-import MainTabs from './MainTabs'; // Tab navigator
 
+// IMPORT SCREENS
+import MainTabs from './MainTabs'; // Your Bottom Tab Navigator
+import MovieDetailsScreen from '../screens/MovieDetailsScreen'; // The new details page
+
+// Define the parameters for every screen
 export type RootStackParamList = {
-  Home: undefined;
-  Login: undefined;
-  Register: undefined;
-  MainTabs: {
-    screen: string;
-    params: {
-      name: string;
-      email: string;
-      phone: string;
-    };
-  };
+  MainTabs: undefined;
+  MovieDetails: {movie: any}; // Expects a 'movie' object
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export const AppNavigator = () => (
-  <NavigationContainer>
-    <Stack.Navigator screenOptions={{headerShown: false}}>
-      <Stack.Screen name="Home" component={HomeScreen} />
-      <Stack.Screen name="Login" component={LoginScreen} />
-      <Stack.Screen name="Register" component={RegisterScreen} />
-      <Stack.Screen name="MainTabs" component={MainTabs} />
-    </Stack.Navigator>
-  </NavigationContainer>
+  <Stack.Navigator
+    screenOptions={{
+      headerShown: false,
+      // CRITICAL: Forces background black to prevent "Grey Overlay" during transitions
+      contentStyle: {backgroundColor: '#000000'},
+      animation: 'fade_from_bottom', // Cinematic transition
+    }}>
+    {/* The Main App (Tabs) */}
+    <Stack.Screen name="MainTabs" component={MainTabs} />
+
+    {/* The Details Page (Pushes on top of tabs) */}
+    <Stack.Screen name="MovieDetails" component={MovieDetailsScreen} />
+  </Stack.Navigator>
 );

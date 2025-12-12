@@ -1,4 +1,4 @@
-import React, {useState, useRef} from 'react';
+import React, {useState, useRef, useEffect} from 'react';
 import {
   View,
   Text,
@@ -9,16 +9,13 @@ import {
   Animated,
   KeyboardAvoidingView,
   Platform,
-  Dimensions,
   StatusBar,
   ActivityIndicator,
+  InteractionManager,
 } from 'react-native';
-import CleverTap from 'clevertap-react-native';
 import {useNavigation} from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import Toast from 'react-native-toast-message';
-
-// PRO ASSETS: Icons make forms 2x faster to read
 import {
   User,
   Mail,
@@ -28,10 +25,10 @@ import {
   ChevronRight,
 } from 'lucide-react-native';
 
-const {width, height} = Dimensions.get('window');
+// IMPORT THE STORE
+import {useAuthStore} from '../store/useAuthStore';
 
-// --- HELPER COMPONENT: ANIMATED INPUT ---
-// This isolates the logic for the "Glow" effect when you click a box
+// --- SHARED COMPONENT: MODERN INPUT ---
 const ModernInput = ({
   label,
   icon: Icon,
@@ -64,7 +61,7 @@ const ModernInput = ({
 
   const borderColor = animatedBorder.interpolate({
     inputRange: [0, 1],
-    outputRange: ['#2D2D3A', '#E50914'], // Grey -> Netflix Red on focus
+    outputRange: ['#2D2D3A', '#E50914'],
   });
 
   return (
@@ -92,11 +89,12 @@ const ModernInput = ({
   );
 };
 
-// --- MAIN SCREEN ---
 const RegisterScreen = () => {
   const navigation = useNavigation<any>();
 
-  // State
+  // 1. USE THE STORE ACTION
+  const {login} = useAuthStore();
+
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -105,23 +103,22 @@ const RegisterScreen = () => {
     confirm: '',
   });
   const [isLoading, setIsLoading] = useState(false);
-
-  // Animations
-  const buttonScale = useRef(new Animated.Value(1)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  React.useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 800,
-      useNativeDriver: true,
-    }).start();
+  useEffect(() => {
+    const task = InteractionManager.runAfterInteractions(() => {
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }).start();
+    });
+    return () => task.cancel();
   }, []);
 
   const handleRegister = async () => {
     const {name, email, phone, password, confirm} = formData;
 
-    // 1. Validation
     if (!name || !email || !phone || !password) {
       return Toast.show({
         type: 'error',
@@ -140,39 +137,18 @@ const RegisterScreen = () => {
     setIsLoading(true);
 
     try {
-      // 2. Data Formatting
+      // 2. THE FIX IS HERE:
+      // We do NOT navigate manually. We just tell the store "User Logged In".
+      // The store updates state -> App.tsx re-renders -> AuthStack unmounts -> AppStack mounts.
+      // Magic! 🪄
+
       const formattedPhone = phone.startsWith('+') ? phone : `+${phone}`;
 
-      // 3. CLEVERTAP INTEGRATION (SECURE)
-      // DO NOT send password. Do send "Plan Type" or "Source"
-      const userProfile = {
-        Name: name,
-        Identity: email, // Critical for merging profiles
-        Email: email,
-        Phone: formattedPhone,
-        'Account Created': new Date(),
-        'Plan Type': 'Free', // Good for segmentation later
-        'MSG-email': true, // Opt-in for email marketing
-        'MSG-push': true, // Opt-in for push
-      };
+      // Call the store action
+      await login(name, email);
 
-      await CleverTap.onUserLogin(userProfile);
-
-      // Track the specific event
-      CleverTap.recordEvent('User Registered', {Method: 'Email'});
-
-      // 4. Success UI
-      Toast.show({
-        type: 'success',
-        text1: 'Welcome!',
-        text2: `Account created for ${name}`,
-      });
-
-      // Navigate to Dashboard (passing minimal data)
-      navigation.reset({
-        index: 0,
-        routes: [{name: 'MainTabs'}],
-      });
+      // (Optional) Toast might not show long enough before unmount, but that's okay.
+      // Toast.show({ type: 'success', text1: 'Welcome!', text2: `Account created` });
     } catch (error) {
       console.error(error);
       Toast.show({
@@ -180,16 +156,13 @@ const RegisterScreen = () => {
         text1: 'Registration Failed',
         text2: 'Please try again later.',
       });
-    } finally {
-      setIsLoading(false);
+      setIsLoading(false); // Only stop loading if error. If success, component unmounts anyway.
     }
   };
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
-
-      {/* 1. CINEMATIC HEADER (Gradient + Back Button) */}
       <LinearGradient
         colors={['rgba(229, 9, 20, 0.15)', 'transparent']}
         style={styles.headerGradient}
@@ -261,7 +234,6 @@ const RegisterScreen = () => {
               isSecure={true}
             />
 
-            {/* MAIN ACTION BUTTON */}
             <TouchableOpacity
               style={styles.ctaButton}
               onPress={handleRegister}
@@ -277,7 +249,6 @@ const RegisterScreen = () => {
               )}
             </TouchableOpacity>
 
-            {/* LEGAL FOOTER */}
             <Text style={styles.legalText}>
               By signing up, you agree to our Terms of Service and Privacy
               Policy.
@@ -290,10 +261,7 @@ const RegisterScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#000000', // Pure OLED Black
-  },
+  container: {flex: 1, backgroundColor: '#000000'},
   headerGradient: {
     position: 'absolute',
     top: 0,
@@ -320,18 +288,8 @@ const styles = StyleSheet.create({
     color: '#fff',
     letterSpacing: 0.5,
   },
-  subHeader: {
-    fontSize: 16,
-    color: '#888',
-    marginBottom: 32,
-    fontWeight: '400',
-  },
-  scrollContent: {
-    paddingHorizontal: 24,
-    paddingBottom: 40,
-  },
-
-  // INPUT STYLES
+  subHeader: {fontSize: 16, color: '#888', marginBottom: 32, fontWeight: '400'},
+  scrollContent: {paddingHorizontal: 24, paddingBottom: 40},
   inputLabel: {
     fontSize: 11,
     color: '#888',
@@ -342,7 +300,7 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#111', // Slightly lighter than background
+    backgroundColor: '#111',
     borderRadius: 12,
     borderWidth: 1,
     height: 56,
@@ -363,11 +321,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
   },
-
-  // CTA BUTTON
   ctaButton: {
     marginTop: 20,
-    backgroundColor: '#E50914', // Netflix Red
+    backgroundColor: '#E50914',
     borderRadius: 12,
     height: 56,
     flexDirection: 'row',
@@ -379,14 +335,7 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 8,
   },
-  ctaText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginRight: 8,
-  },
-
-  // FOOTER
+  ctaText: {color: '#fff', fontSize: 16, fontWeight: 'bold', marginRight: 8},
   legalText: {
     marginTop: 24,
     textAlign: 'center',

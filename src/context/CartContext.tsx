@@ -1,53 +1,51 @@
-import React, {createContext, useState, ReactNode, useContext} from 'react';
+import React, {createContext, useState, useContext, ReactNode} from 'react';
 
+// 1. Define the shape of your Cart Data
 type CartItem = {
-  id: number | string;
+  id: string;
   title: string;
-  description?: string;
-  [key: string]: any;
+  price: number;
+  image: string;
 };
 
 type CartContextType = {
   cartItems: CartItem[];
   addToCart: (item: CartItem) => void;
-  clearCart: () => void;
-  removeFromCart: (id: number | string) => void;
+  removeFromCart: (id: string) => void;
+  cartTotal: number;
 };
 
+// 2. Create Context
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
+// 3. Create Provider
 export const CartProvider = ({children}: {children: ReactNode}) => {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
 
   const addToCart = (item: CartItem) => {
-    setCartItems(prev => {
-      if (prev.find(i => i.id === item.id)) {
-        return prev; // avoid duplicates
-      }
-      return [...prev, item];
-    });
+    setCartItems(prev => [...prev, item]);
   };
 
-  const removeFromCart = (id: number | string) => {
+  const removeFromCart = (id: string) => {
     setCartItems(prev => prev.filter(item => item.id !== id));
   };
 
-  const clearCart = () => {
-    setCartItems([]);
-  };
+  // Calculate Total Price
+  const cartTotal = cartItems.reduce((sum, item) => sum + item.price, 0);
 
   return (
     <CartContext.Provider
-      value={{cartItems, addToCart, clearCart, removeFromCart}}>
+      value={{cartItems, addToCart, removeFromCart, cartTotal}}>
       {children}
     </CartContext.Provider>
   );
 };
 
-export const useCart = () => {
+// 4. THE FIX: Export the Custom Hook
+export const useCartContext = () => {
   const context = useContext(CartContext);
   if (!context) {
-    throw new Error('useCart must be used within a CartProvider');
+    throw new Error('useCartContext must be used within a CartProvider');
   }
   return context;
 };

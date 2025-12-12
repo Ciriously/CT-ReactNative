@@ -1,115 +1,96 @@
 import 'react-native-reanimated';
 import React, {useEffect, useState} from 'react';
-import {Platform} from 'react-native';
-import {AppNavigator} from './navigation/AppNavigator';
-import {CartProvider} from './context/CartContext';
-import Toast from 'react-native-toast-message';
+import {Platform, View, ActivityIndicator, StatusBar} from 'react-native';
+import {NavigationContainer, DefaultTheme} from '@react-navigation/native';
+import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import CleverTap from 'clevertap-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import {CartProvider} from './context/CartContext';
+import {useAuthStore} from './store/useAuthStore';
+import {AppNavigator} from './navigation/AppNavigator';
+import {HomeScreen} from './screens/HomeScreen';
+import LoginScreen from './screens/LoginScreen';
+import RegisterScreen from './screens/RegisterScreen';
+
+const Stack = createNativeStackNavigator();
+
+const MyDarkTheme = {
+  ...DefaultTheme,
+  colors: {
+    ...DefaultTheme.colors,
+    background: '#000000',
+    card: '#000000',
+    text: '#ffffff',
+  },
+};
+
+const AuthStack = () => (
+  <Stack.Navigator
+    screenOptions={{
+      headerShown: false,
+      contentStyle: {backgroundColor: '#000'},
+    }}>
+    <Stack.Screen name="Home" component={HomeScreen} />
+    <Stack.Screen name="Login" component={LoginScreen} />
+    <Stack.Screen name="Register" component={RegisterScreen} />
+  </Stack.Navigator>
+);
+
 const App = () => {
-  const [initialized, setInitialized] = useState(false);
+  const [isReady, setIsReady] = useState(false);
+  const {isAuthenticated, checkSession} = useAuthStore();
 
   useEffect(() => {
     const initializeApp = async () => {
       try {
+        // 1. SAFETY: Kill any stuck messages immediately
+        CleverTap.discardInAppNotifications();
+
+        await checkSession();
+
         if (Platform.OS === 'android') {
-          await setupNotificationChannels();
+          CleverTap.createNotificationChannel(
+            'CT_PRIMARY',
+            'Essential',
+            'Updates',
+            4,
+            true,
+          );
         }
 
-        if (Platform.OS === 'ios') {
-          await requestNotificationPermissions();
-        }
-
-        await checkAndShowNotificationPrimer();
-
-        setInitialized(true);
+        // 2. SAFETY: DO NOT CALL 'promptPushPrimer' HERE YET.
+        // That function creates a native UI overlay that can get stuck.
       } catch (error) {
-        console.error('Initialization error:', error);
-        setInitialized(true);
+        console.error(error);
+      } finally {
+        setIsReady(true);
       }
     };
 
     initializeApp();
   }, []);
 
-  const setupNotificationChannels = async () => {
-    try {
-      await Promise.all([
-        CleverTap.createNotificationChannel(
-          'CT_PRIMARY_CHANNEL',
-          'Essential Notifications',
-          'Important account updates',
-          4,
-          true,
-        ),
-        CleverTap.createNotificationChannel(
-          'CT_PROMOTIONS_CHANNEL',
-          'Special Offers',
-          'Personalized deals',
-          3,
-          false,
-        ),
-      ]);
-    } catch (error) {
-      console.warn('Notification channel setup failed:', error);
-    }
-  };
-
-  const requestNotificationPermissions = async () => {
-    try {
-      CleverTap.registerForPush();
-    } catch (error) {
-      console.warn('Push permission request failed:', error);
-    }
-  };
-
-  const checkAndShowNotificationPrimer = async () => {
-    try {
-      const hasSeenPrimer = await AsyncStorage.getItem(
-        '@notificationPrimerShown',
-      );
-      if (hasSeenPrimer !== 'true') {
-        await showPushNotificationPrimer();
-      }
-    } catch (error) {
-      console.warn('Notification primer check failed:', error);
-    }
-  };
-
-  const showPushNotificationPrimer = async () => {
-    try {
-      CleverTap.promptPushPrimer({
-        inAppType: 'half-interstitial',
-        titleText: 'Get Notified',
-        messageText:
-          'Please enable notifications on your device to use Push Notifications.',
-        followDeviceOrientation: true,
-        positiveBtnText: 'Allow',
-        negativeBtnText: 'Cancel',
-        backgroundColor: '#FFFFFF',
-        btnBorderColor: '#0000FF',
-        titleTextColor: '#0000FF',
-        messageTextColor: '#000000',
-        btnTextColor: '#FFFFFF',
-        btnBackgroundColor: '#0000FF',
-        btnBorderRadius: '2',
-        fallbackToSettings: true,
-      });
-      await AsyncStorage.setItem('@notificationPrimerShown', 'true');
-    } catch (error) {
-      console.warn('Failed to show notification primer:', error);
-    }
-  };
-
-  if (!initialized) {
-    return null;
+  if (!isReady) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: '#000',
+          justifyContent: 'center',
+          alignItems: 'center',
+        }}>
+        <ActivityIndicator size="large" color="red" />
+      </View>
+    );
   }
 
   return (
     <CartProvider>
-      <AppNavigator />
-      <Toast />
+      <StatusBar barStyle="light-content" backgroundColor="#000" />
+      <NavigationContainer theme={MyDarkTheme}>
+        {isAuthenticated ? <AppNavigator /> : <AuthStack />}
+      </NavigationContainer>
     </CartProvider>
   );
 };
