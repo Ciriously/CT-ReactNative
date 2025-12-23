@@ -69,7 +69,6 @@ dependencies {
     }
 
     // --- CLEVERTAP DEPENDENCIES ---
-    // Removed duplicate 7.5.0 version. Kept the newer 7.7.1
     implementation "com.clevertap.android:clevertap-android-sdk:7.7.1"
     implementation "com.clevertap.android:push-templates:2.2.0"
     implementation 'com.android.installreferrer:installreferrer:2.2'

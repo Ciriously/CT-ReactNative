@@ -1,51 +1,78 @@
-import React, {createContext, useState, useContext, ReactNode} from 'react';
+import React, {createContext, useContext, useState} from 'react';
+import Toast from 'react-native-toast-message';
 
-// 1. Define the shape of your Cart Data
-type CartItem = {
+// Define the shape of a Cart Item
+type MovieItem = {
   id: string;
   title: string;
-  price: number;
   image: string;
+  category: string;
+  price: number;
 };
 
 type CartContextType = {
-  cartItems: CartItem[];
-  addToCart: (item: CartItem) => void;
+  cartItems: MovieItem[];
+  addToCart: (item: any, customPrice?: number) => void; // Updated signature
   removeFromCart: (id: string) => void;
+  clearCart: () => void;
   cartTotal: number;
 };
 
-// 2. Create Context
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
-// 3. Create Provider
-export const CartProvider = ({children}: {children: ReactNode}) => {
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+export const CartProvider = ({children}: {children: React.ReactNode}) => {
+  const [cartItems, setCartItems] = useState<MovieItem[]>([]);
 
-  const addToCart = (item: CartItem) => {
-    setCartItems(prev => [...prev, item]);
+  // Calculate Total dynamically
+  const cartTotal = cartItems.reduce((sum, item) => sum + item.price, 0);
+
+  // Updated to accept customPrice
+  const addToCart = (movie: any, customPrice?: number) => {
+    // Prevent duplicates
+    if (cartItems.some(item => item.id === movie.id)) {
+      Toast.show({
+        type: 'info',
+        text1: 'Already in Cart',
+        text2: `${movie.title} is ready for checkout.`,
+      });
+      return;
+    }
+
+    // Use the passed price OR generate a random one if missing (Fallback)
+    const finalPrice =
+      customPrice ||
+      parseFloat((Math.random() * (12.99 - 3.99) + 3.99).toFixed(2));
+
+    const newItem = {...movie, price: finalPrice};
+
+    setCartItems([...cartItems, newItem]);
+
+    Toast.show({
+      type: 'success',
+      text1: 'Added to Cart',
+      text2: `${movie.title} - $${finalPrice.toFixed(2)}`,
+    });
   };
 
   const removeFromCart = (id: string) => {
-    setCartItems(prev => prev.filter(item => item.id !== id));
+    setCartItems(cartItems.filter(item => item.id !== id));
   };
 
-  // Calculate Total Price
-  const cartTotal = cartItems.reduce((sum, item) => sum + item.price, 0);
+  const clearCart = () => {
+    setCartItems([]);
+  };
 
   return (
     <CartContext.Provider
-      value={{cartItems, addToCart, removeFromCart, cartTotal}}>
+      value={{cartItems, addToCart, removeFromCart, clearCart, cartTotal}}>
       {children}
     </CartContext.Provider>
   );
 };
 
-// 4. THE FIX: Export the Custom Hook
 export const useCartContext = () => {
   const context = useContext(CartContext);
-  if (!context) {
+  if (!context)
     throw new Error('useCartContext must be used within a CartProvider');
-  }
   return context;
 };

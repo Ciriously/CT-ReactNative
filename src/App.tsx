@@ -5,6 +5,8 @@ import {NavigationContainer, DefaultTheme} from '@react-navigation/native';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import CleverTap from 'clevertap-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Toast from 'react-native-toast-message';
+import {toastConfig} from './components/UI/ CustomToast';
 
 import {CartProvider} from './context/CartContext';
 import {useAuthStore} from './store/useAuthStore';
@@ -84,13 +86,17 @@ const App = () => {
       </View>
     );
   }
-
   return (
     <CartProvider>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
+
+      {/* 1. YOUR APP */}
       <NavigationContainer theme={MyDarkTheme}>
         {isAuthenticated ? <AppNavigator /> : <AuthStack />}
       </NavigationContainer>
+
+      {/* 2. THE COOL TOAST (Must be LAST) */}
+      <Toast config={toastConfig} />
     </CartProvider>
   );
 };

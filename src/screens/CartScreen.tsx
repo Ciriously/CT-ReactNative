@@ -1,377 +1,194 @@
-import React from 'react';
+import React, {useState} from 'react';
 import {
   View,
   Text,
-  FlatList,
-  TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
+  FlatList,
   Image,
-  Animated,
-  Platform,
+  TouchableOpacity,
+  StatusBar,
+  ActivityIndicator,
 } from 'react-native';
-import {useCart} from '../context/CartContext';
-import Toast from 'react-native-toast-message';
-import clevertap from 'clevertap-react-native';
-
-const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/w500';
+import {useCartContext} from '../context/CartContext';
+import CleverTap from 'clevertap-react-native';
+import LinearGradient from 'react-native-linear-gradient';
+import {Trash2, CreditCard} from 'lucide-react-native';
+import Toast from 'react-native-toast-message'; // <--- IMPORT TOAST
 
 const CartScreen = () => {
-  const {cartItems, removeFromCart, clearCart} = useCart();
-  const fadeAnim = React.useRef(new Animated.Value(0)).current;
-
-  React.useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
-  }, [fadeAnim]);
+  const {cartItems, removeFromCart, clearCart, cartTotal} = useCartContext();
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const handleCheckout = () => {
-    const totalAmount = cartItems.reduce(
-      (sum, item) => sum + (item.price || 0),
-      0,
-    );
+    if (cartItems.length === 0) return;
 
-    // Prepare charge details object
-    const chargeDetails = {
-      totalValue: totalAmount,
-      category: 'movies', // or any other relevant category
-      purchase_date: new Date(),
-      payment_method: 'In-App',
-      currency: 'USD',
-      item_count: cartItems.length,
-    };
+    setIsProcessing(true);
 
-    // Prepare items array
-    const items = cartItems.map(item => ({
-      title: item.title,
-      price: item.price,
-      id: item.id,
-      poster:
-        item.image ||
-        (item.poster_path
-          ? `${TMDB_IMAGE_BASE_URL}${item.poster_path}`
-          : undefined),
-      description: item.description,
-    }));
+    setTimeout(() => {
+      const chargeID = 'TXN_' + Math.floor(Math.random() * 1000000);
 
-    // Send to CleverTap
-    clevertap.recordChargedEvent(chargeDetails, items);
+      // 1. CLEVERTAP CHARGED EVENT
+      const chargeDetails = {
+        Amount: cartTotal,
+        'Payment Mode': 'Credit Card',
+        'Charged ID': chargeID,
+        Currency: 'USD',
+      };
 
-    // Show success toast
-    Toast.show({
-      type: 'success',
-      text1: 'Payment Successful',
-      text2: `You've been charged for ${
-        cartItems.length
-      } items ($${totalAmount.toFixed(2)})`,
-      visibilityTime: 3000,
-      position: 'bottom',
-    });
+      const items = cartItems.map(item => ({
+        Category: item.category || 'Movie',
+        'Product Name': item.title,
+        Quantity: 1,
+        Price: item.price,
+      }));
 
-    clearCart();
+      CleverTap.recordChargedEvent(chargeDetails, items);
+
+      // 2. UI RESET
+      setIsProcessing(false);
+      clearCart();
+
+      // 3. ✨ COOL TOAST REPLACEMENT ✨
+      Toast.show({
+        type: 'success',
+        text1: 'Purchase Successful! 🎉',
+        text2: `Order #${chargeID} confirmed. Enjoy the show!`,
+        visibilityTime: 4000, // Show a bit longer for success
+      });
+    }, 2000);
   };
 
-  const renderItem = ({item}: {item: any}) => {
-    const itemAnim = new Animated.Value(1);
-
-    const handleRemove = () => {
-      Animated.timing(itemAnim, {
-        toValue: 0,
-        duration: 250,
-        useNativeDriver: true,
-      }).start(() => removeFromCart(item.id));
-    };
-
-    const imageUrl =
-      item.image ||
-      (item.poster_path ? `${TMDB_IMAGE_BASE_URL}${item.poster_path}` : null);
-
-    return (
-      <Animated.View
-        style={[
-          styles.item,
-          {
-            opacity: itemAnim,
-            transform: [
-              {
-                scale: itemAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0.9, 1],
-                }),
-              },
-            ],
-          },
-        ]}>
-        {imageUrl ? (
-          <Image
-            source={{uri: imageUrl}}
-            style={styles.itemImage}
-            resizeMode="cover"
-          />
-        ) : (
-          <View style={styles.itemImagePlaceholder}>
-            <Text style={styles.placeholderText}>No Image</Text>
-          </View>
-        )}
-
-        <View style={styles.itemTextContainer}>
-          <Text style={styles.title} numberOfLines={1}>
-            {item.title}
-          </Text>
-          {item.description && (
-            <Text style={styles.description} numberOfLines={2}>
-              {item.description}
-            </Text>
-          )}
-          {item.price && (
-            <Text style={styles.price}>${item.price.toFixed(2)}</Text>
-          )}
-        </View>
-
-        <TouchableOpacity
-          onPress={handleRemove}
-          style={styles.removeBtn}
-          activeOpacity={0.8}>
-          <Text style={styles.removeText}>X</Text>
-        </TouchableOpacity>
-      </Animated.View>
-    );
-  };
+  const renderItem = ({item}: {item: any}) => (
+    <View style={styles.cartItem}>
+      <Image source={{uri: item.image}} style={styles.poster} />
+      <View style={styles.info}>
+        <Text style={styles.title} numberOfLines={1}>
+          {item.title}
+        </Text>
+        <Text style={styles.category}>{item.category}</Text>
+        <Text style={styles.price}>${item.price.toFixed(2)}</Text>
+      </View>
+      <TouchableOpacity
+        onPress={() => removeFromCart(item.id)}
+        style={styles.trashBtn}>
+        <Trash2 color="#666" size={20} />
+      </TouchableOpacity>
+    </View>
+  );
 
   return (
-    <View style={styles.safeArea}>
-      <SafeAreaView style={styles.safeContent}>
-        <Animated.View style={[styles.container, {opacity: fadeAnim}]}>
-          <View style={styles.headerContainer}>
-            <Text style={styles.header}>My Cart</Text>
-            {cartItems.length > 0 && (
-              <Text style={styles.itemCount}>{cartItems.length} items</Text>
-            )}
-          </View>
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="#000" />
+      <LinearGradient
+        colors={['#000', '#111']}
+        style={StyleSheet.absoluteFill}
+      />
 
-          {cartItems.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.cartIcon}>🛒</Text>
-              <Text style={styles.emptyText}>Your cart is empty</Text>
-              <Text style={styles.emptySubtext}>
-                Start shopping to add items
-              </Text>
+      <Text style={styles.headerTitle}>My Cart ({cartItems.length})</Text>
+
+      {cartItems.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyText}>Your cart is empty.</Text>
+          <Text style={styles.subText}>Rent movies to watch them anytime.</Text>
+        </View>
+      ) : (
+        <>
+          <FlatList
+            data={cartItems}
+            keyExtractor={item => item.id}
+            renderItem={renderItem}
+            contentContainerStyle={styles.list}
+          />
+
+          <View style={styles.footer}>
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Total</Text>
+              <Text style={styles.totalAmount}>${cartTotal.toFixed(2)}</Text>
             </View>
-          ) : (
-            <>
-              <FlatList
-                data={cartItems}
-                keyExtractor={item => item.id.toString()}
-                contentContainerStyle={styles.listContent}
-                renderItem={renderItem}
-                ListFooterComponent={
-                  <View style={styles.totalContainer}>
-                    <Text style={styles.totalText}>
-                      Total: $
-                      {cartItems
-                        .reduce((sum, item) => sum + (item.price || 0), 0)
-                        .toFixed(2)}
-                    </Text>
-                  </View>
-                }
-              />
 
-              <View style={styles.buttonContainer}>
-                <TouchableOpacity
-                  style={[styles.actionBtn, styles.clearBtn]}
-                  onPress={clearCart}
-                  activeOpacity={0.8}>
-                  <Text style={styles.actionBtnText}>Clear All</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.actionBtn, styles.checkoutBtn]}
-                  onPress={handleCheckout}
-                  activeOpacity={0.8}>
-                  <Text style={styles.actionBtnText}>Checkout</Text>
-                </TouchableOpacity>
-              </View>
-            </>
-          )}
-        </Animated.View>
-      </SafeAreaView>
-      <Toast />
+            <TouchableOpacity
+              style={styles.checkoutBtn}
+              onPress={handleCheckout}
+              disabled={isProcessing}>
+              {isProcessing ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <CreditCard color="#fff" size={20} style={{marginRight: 8}} />
+                  <Text style={styles.checkoutText}>Pay Now</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  safeContent: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  container: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    backgroundColor: '#fff',
-  },
-  headerContainer: {
-    marginBottom: 24,
-    alignItems: 'center',
-    paddingTop: 8,
-  },
-  header: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#222',
-    fontFamily: 'Poppins-Bold',
-  },
-  itemCount: {
-    fontSize: 14,
-    color: '#888',
-    marginTop: 4,
-    fontFamily: 'Poppins-Regular',
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  cartIcon: {
-    fontSize: 60,
-    color: '#ccc',
-    marginBottom: 16,
-  },
-  emptyText: {
-    fontSize: 20,
-    color: '#555',
-    marginTop: 16,
-    fontFamily: 'Poppins-SemiBold',
-  },
-  emptySubtext: {
-    fontSize: 16,
-    color: '#888',
-    marginTop: 8,
-    fontFamily: 'Poppins-Regular',
-  },
-  listContent: {
-    paddingBottom: 20,
-  },
-  item: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#eee',
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    shadowOffset: {width: 0, height: 2},
-    elevation: 2,
-    alignItems: 'center',
-  },
-  itemImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 8,
-    marginRight: 16,
-    backgroundColor: '#f5f5f5',
-  },
-  itemImagePlaceholder: {
-    width: 60,
-    height: 60,
-    borderRadius: 8,
-    marginRight: 16,
-    backgroundColor: '#f5f5f5',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  placeholderText: {
-    color: '#888',
-    fontFamily: 'Poppins-Regular',
-  },
-  itemTextContainer: {
-    flex: 1,
-    paddingRight: 12,
-  },
-  title: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#222',
-    fontFamily: 'Poppins-SemiBold',
-  },
-  description: {
-    fontSize: 13,
-    color: '#777',
-    marginTop: 4,
-    fontFamily: 'Poppins-Regular',
-  },
-  price: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#222',
-    marginTop: 8,
-    fontFamily: 'Poppins-Bold',
-  },
-  removeBtn: {
-    backgroundColor: '#ff3b30',
-    padding: 8,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: 40,
-    height: 40,
-  },
-  removeText: {
-    color: '#fff',
+  container: {flex: 1, backgroundColor: '#000', paddingTop: 60},
+  headerTitle: {
+    fontSize: 24,
     fontWeight: 'bold',
-    fontFamily: 'Poppins-Bold',
+    color: '#fff',
+    paddingHorizontal: 20,
+    marginBottom: 20,
   },
-  totalContainer: {
-    padding: 16,
-    backgroundColor: '#f9f9f9',
-    borderRadius: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#eee',
+  list: {paddingHorizontal: 20, paddingBottom: 150},
+  cartItem: {
+    flexDirection: 'row',
+    backgroundColor: '#1a1a1a',
+    marginBottom: 12,
+    borderRadius: 8,
+    padding: 10,
+    alignItems: 'center',
   },
-  totalText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#222',
-    textAlign: 'center',
-    fontFamily: 'Poppins-Bold',
+  poster: {width: 50, height: 75, borderRadius: 4, backgroundColor: '#333'},
+  info: {flex: 1, marginLeft: 12},
+  title: {color: '#fff', fontSize: 16, fontWeight: 'bold'},
+  category: {color: '#888', fontSize: 12, marginTop: 4},
+  price: {color: '#E50914', fontSize: 14, fontWeight: 'bold', marginTop: 4},
+  trashBtn: {padding: 10},
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    opacity: 0.5,
   },
-  buttonContainer: {
+  emptyText: {color: '#fff', fontSize: 18, fontWeight: 'bold'},
+  subText: {color: '#888', marginTop: 8},
+  footer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#1a1a1a',
+    padding: 20,
+    paddingBottom: 40,
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+  },
+  totalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingBottom: Platform.select({ios: 24, android: 16}),
+    marginBottom: 16,
   },
-  actionBtn: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginHorizontal: 6,
-  },
+  totalLabel: {color: '#aaa', fontSize: 16},
+  totalAmount: {color: '#fff', fontSize: 24, fontWeight: 'bold'},
   checkoutBtn: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#E50914',
+    borderRadius: 8,
+    height: 50,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#E50914',
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
   },
-  clearBtn: {
-    backgroundColor: '#ff3b30',
-  },
-  actionBtnText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-    fontFamily: 'Poppins-SemiBold',
-  },
+  checkoutText: {color: '#fff', fontSize: 16, fontWeight: 'bold'},
 });
 
 export default CartScreen;

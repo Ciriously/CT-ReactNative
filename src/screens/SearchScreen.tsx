@@ -8,233 +8,252 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  Modal,
-  ScrollView,
-  Platform,
+  StatusBar,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import Toast from 'react-native-toast-message';
-import clevertap from 'clevertap-react-native';
+import CleverTap from 'clevertap-react-native';
+import {useNavigation} from '@react-navigation/native';
+import LinearGradient from 'react-native-linear-gradient';
+import {Search, X, PlayCircle, ChevronRight} from 'lucide-react-native';
 
 const API_KEY = '3f3d99a0fd1f7198cfee2091f5b351bf';
+const IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 
 const SearchScreen = () => {
+  const navigation = useNavigation<any>();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [selectedMovie, setSelectedMovie] = useState<any | null>(null);
 
   const handleSearch = async () => {
     if (!query.trim()) return;
-
+    Keyboard.dismiss();
     setLoading(true);
+
     try {
       const response = await fetch(
         `https://api.themoviedb.org/3/search/movie?api_key=${API_KEY}&query=${encodeURIComponent(
           query,
-        )}`,
+        )}&include_adult=false`,
       );
       const json = await response.json();
-      setResults(json.results || []);
+      const movies = json.results || [];
+
+      setResults(movies);
+
+      // 🔍 TRACK SEARCH EVENT
+      CleverTap.recordEvent('Search Performed', {
+        Query: query,
+        ResultCount: movies.length,
+        Date: new Date().toISOString(),
+      });
+
+      if (movies.length === 0) {
+        Toast.show({
+          type: 'info',
+          text1: 'No Results Found',
+          text2: `Try searching for something else.`,
+        });
+      }
     } catch (error) {
       console.error('Search error:', error);
       Toast.show({
         type: 'error',
         text1: 'Search Failed',
-        text2: 'Please try again later',
+        text2: 'Please check your internet.',
       });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleMoviePress = (movie: any) => {
-    setSelectedMovie(movie);
+  const handleClear = () => {
+    setQuery('');
+    setResults([]);
+    Keyboard.dismiss();
+  };
 
-    // Record CleverTap event
-    clevertap.recordEvent('Movie Clicked', {
-      title: movie.title,
-      movie_id: movie.id,
-      click_time: new Date().toISOString(),
-      platform: Platform.OS,
+  const handleMoviePress = (item: any) => {
+    // Format data to match Dashboard structure
+    const movieData = {
+      id: item.id.toString(),
+      title: item.title,
+      image: item.backdrop_path
+        ? `${IMAGE_BASE}${item.backdrop_path}`
+        : `${IMAGE_BASE}${item.poster_path}`,
+      category: 'Search Result',
+      overview: item.overview,
+      rating: item.vote_average,
+    };
+
+    // 🔍 TRACK CLICK
+    CleverTap.recordEvent('Product Clicked', {
+      ...movieData,
+      ClickSource: 'Search Screen',
+      SearchQuery: query,
     });
+
+    // NAVIGATE TO DETAILS
+    navigation.navigate('MovieDetails', {movie: movieData});
   };
 
   const renderItem = ({item}: any) => (
     <TouchableOpacity
+      activeOpacity={0.7}
       onPress={() => handleMoviePress(item)}
       style={styles.card}>
-      {item.poster_path ? (
-        <Image
-          source={{uri: `https://image.tmdb.org/t/p/w200${item.poster_path}`}}
-          style={styles.poster}
-        />
-      ) : (
-        <View style={styles.noPoster}>
-          <Text>No Image</Text>
-        </View>
-      )}
+      <View style={styles.posterContainer}>
+        {item.poster_path ? (
+          <Image
+            source={{uri: `${IMAGE_BASE}${item.poster_path}`}}
+            style={styles.poster}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={[styles.poster, styles.noPoster]}>
+            <Text style={styles.noPosterText}>No Image</Text>
+          </View>
+        )}
+      </View>
+
       <View style={styles.info}>
-        <Text style={styles.title}>{item.title}</Text>
-        <Text style={styles.overview} numberOfLines={3}>
+        <Text style={styles.title} numberOfLines={1}>
+          {item.title}
+        </Text>
+        <Text style={styles.year}>
+          {item.release_date ? item.release_date.split('-')[0] : 'N/A'}
+        </Text>
+        <Text style={styles.overview} numberOfLines={2}>
           {item.overview}
         </Text>
+      </View>
+
+      <View style={styles.actionIcon}>
+        <PlayCircle size={28} color="#fff" />
       </View>
     </TouchableOpacity>
   );
 
   return (
     <View style={styles.container}>
-      <TextInput
-        placeholder="Search movies..."
-        value={query}
-        onChangeText={setQuery}
-        onSubmitEditing={handleSearch}
-        style={styles.input}
+      <StatusBar barStyle="light-content" backgroundColor="#000" />
+      <LinearGradient
+        colors={['#000', '#111']}
+        style={StyleSheet.absoluteFill}
       />
-      {loading ? (
-        <ActivityIndicator
-          size="large"
-          color="#e50914"
-          style={{marginTop: 20}}
+
+      {/* HEADER */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Search</Text>
+      </View>
+
+      {/* SEARCH BAR */}
+      <View style={styles.searchContainer}>
+        <Search size={20} color="#888" style={{marginLeft: 12}} />
+        <TextInput
+          placeholder="Movies, shows, genres..."
+          placeholderTextColor="#666"
+          value={query}
+          onChangeText={setQuery}
+          onSubmitEditing={handleSearch}
+          returnKeyType="search"
+          style={styles.input}
+          autoCorrect={false}
         />
-      ) : (
+        {query.length > 0 && (
+          <TouchableOpacity onPress={handleClear} style={{padding: 8}}>
+            <X size={18} color="#888" />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* CONTENT */}
+      {loading ? (
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color="#E50914" />
+        </View>
+      ) : results.length > 0 ? (
         <FlatList
           data={results}
           keyExtractor={item => item.id.toString()}
           renderItem={renderItem}
           contentContainerStyle={styles.list}
+          showsVerticalScrollIndicator={false}
+          keyboardDismissMode="on-drag"
         />
-      )}
-
-      {/* Modal for movie details */}
-      <Modal
-        visible={!!selectedMovie}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setSelectedMovie(null)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalContent}>
-            <ScrollView contentContainerStyle={{padding: 16}}>
-              <Text style={styles.modalTitle}>{selectedMovie?.title}</Text>
-              {selectedMovie?.poster_path ? (
-                <Image
-                  source={{
-                    uri: `https://image.tmdb.org/t/p/w300${selectedMovie.poster_path}`,
-                  }}
-                  style={styles.modalPoster}
-                />
-              ) : (
-                <View style={styles.noPoster}>
-                  <Text>No Image</Text>
-                </View>
-              )}
-              <Text style={styles.modalText}>{selectedMovie?.overview}</Text>
-              <TouchableOpacity
-                onPress={() => setSelectedMovie(null)}
-                style={styles.modalButton}>
-                <Text style={styles.modalButtonText}>Close</Text>
-              </TouchableOpacity>
-            </ScrollView>
+      ) : (
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.emptyState}>
+            <Search size={64} color="#333" />
+            <Text style={styles.emptyText}>Find your next favorite.</Text>
+            <Text style={styles.emptySubText}>
+              Search for blockbuster movies, TV shows, and more.
+            </Text>
           </View>
-        </View>
-      </Modal>
+        </TouchableWithoutFeedback>
+      )}
     </View>
   );
 };
 
-export default SearchScreen;
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    padding: 16,
-  },
-  input: {
-    height: 50,
+  container: {flex: 1, backgroundColor: '#000', paddingTop: 10},
+  header: {paddingHorizontal: 16, marginBottom: 12},
+  headerTitle: {fontSize: 28, fontWeight: 'bold', color: '#fff'},
+
+  // SEARCH BAR
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+    marginHorizontal: 16,
+    borderRadius: 8,
+    height: 48,
+    marginBottom: 20,
     borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    marginBottom: 10,
+    borderColor: '#333',
   },
-  list: {
-    paddingBottom: 20,
-  },
+  input: {flex: 1, color: '#fff', fontSize: 16, marginLeft: 10, height: '100%'},
+
+  // LIST
+  list: {paddingHorizontal: 16, paddingBottom: 40},
   card: {
     flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 16,
-    backgroundColor: '#f9f9f9',
-    borderRadius: 10,
+    backgroundColor: '#111',
+    borderRadius: 8,
     overflow: 'hidden',
   },
-  poster: {
-    width: 100,
-    height: 150,
-  },
+  posterContainer: {width: 80, height: 120},
+  poster: {width: '100%', height: '100%'},
   noPoster: {
-    width: 100,
-    height: 150,
-    backgroundColor: '#eee',
+    backgroundColor: '#222',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  info: {
+  noPosterText: {color: '#555', fontSize: 10},
+
+  info: {flex: 1, padding: 12, justifyContent: 'center'},
+  title: {fontWeight: 'bold', fontSize: 16, color: '#fff', marginBottom: 4},
+  year: {fontSize: 12, color: '#888', marginBottom: 6},
+  overview: {fontSize: 12, color: '#aaa', lineHeight: 16},
+
+  actionIcon: {paddingRight: 16},
+
+  // EMPTY STATE
+  centerContainer: {flex: 1, justifyContent: 'center', alignItems: 'center'},
+  emptyState: {
     flex: 1,
-    padding: 10,
-  },
-  title: {
-    fontWeight: 'bold',
-    fontSize: 16,
-    color: '#111',
-    marginBottom: 4,
-  },
-  overview: {
-    fontSize: 14,
-    color: '#444',
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    opacity: 0.8,
+    marginTop: -50,
   },
-  modalContent: {
-    width: '100%',
-    maxHeight: '80%',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    paddingBottom: 16,
-  },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginBottom: 12,
-    color: '#000',
-  },
-  modalPoster: {
-    width: '100%',
-    height: 400,
-    borderRadius: 12,
-    marginBottom: 16,
-  },
-  modalText: {
-    fontSize: 16,
-    color: '#333',
-    marginBottom: 16,
-  },
-  modalButton: {
-    alignSelf: 'center',
-    backgroundColor: '#e50914',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-  },
-  modalButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  emptyText: {color: '#fff', fontSize: 20, fontWeight: 'bold', marginTop: 16},
+  emptySubText: {color: '#666', fontSize: 14, marginTop: 8},
 });
+
+export default SearchScreen;
